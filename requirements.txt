@@ -1,0 +1,23 @@
+# Core Web Framework
+Flask==2.3.0
+Werkzeug==2.3.0
+
+# Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0  # optional, for some utility functions
+
+# Chess Logic
+python-chess==1.9.4
+
+# Numerical Computing
+numpy>=1.24.0
+
+# Optional: GPU support (uncomment if using CUDA)
+# torch-cuda>=2.0.0
+
+# Optional: Production server
+# gunicorn>=20.1.0
+
+# Optional: Development
+# pytest>=7.0.0
+# black>=23.0.0

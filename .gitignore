@@ -1,0 +1,13 @@
+.env
+chess_human_move_predictor_v4.ipynb
+.DS_Store
+.ipynb_checkpoints/
+lichess_elite_2019-10.pgn
+__pycache__
+CLAUDE.md
+env
+Carlsen.pgn
+chess_dataset - Shortcut.lnk
+test_setup.py
+verify_app_v4.py
+chess_dataset

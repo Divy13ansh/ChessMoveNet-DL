@@ -131,56 +131,133 @@ graph TD
 
 ```mermaid
 graph TD
-    subgraph BOARD_TOKENS["Board Token Group (64 tokens)"]
-        PIE["piece_emb(piece_id)\n13 piece types, d_model"]
-        SQE["square_emb(sq_index)\n64 squares, d_model"]
-        SUM4["piece_emb + square_emb"]
+
+    %% =========================================================
+    %% INPUT TOKENIZATION
+    %% =========================================================
+
+    subgraph BOARD["Board Tokens — 64"]
+        PIE["piece_emb(piece_id)<br/>13 piece types → d_model"]
+        SQE["square_emb(sq_index)<br/>64 squares → d_model"]
+        SUM["Board Token<br/>piece_emb + square_emb"]
     end
 
-    subgraph OTHER_TOKENS["Other Token Groups"]
-        STA["State Token (×1)\nstate_proj(13-dim)\nturn + castling + ep"]
-        SKL["Skill Token (×1)\nskill_proj(7-dim)\nELO×2 + clocks + TC"]
-        HST["History Tokens (×K=3)\nhist_from_emb + hist_to_emb + hist_age_emb\nlast K moves"]
+    PIE --> SUM
+    SQE --> SUM
+
+
+    subgraph OTHER["Other Tokens — 3"]
+        STA["State Token ×1<br/>state_proj(13-dim)<br/>turn + castling + en-passant"]
+        SKL["Skill Token ×1<br/>skill_proj(7-dim)<br/>ELO ×2 + clocks + TC"]
+        HST["History Tokens ×3<br/>hist_from_emb + hist_to_emb + hist_age_emb<br/>last K moves"]
     end
 
-    subgraph SEQ["Token Sequence (67 tokens per position)"]
-        ALLtok["[sq_0...sq_63 | state | skill | hist_0...hist_2]"]
+
+    %% =========================================================
+    %% TOKEN SEQUENCE
+    %% =========================================================
+
+    subgraph SEQ["Input Sequence — 67 Tokens"]
+        TOK["[sq_0 ... sq_63 | state | skill | hist_0 | hist_1 | hist_2]"]
     end
 
-    subgraph BLOCKS4["Transformer Blocks × 6  (pre-LN)"]
-        LNA["LayerNorm"]
-        subgraph ATTN4["Multi-Head Attention (8 heads)"]
-            QKV["Q, K, V projections"]
-            GAB["+ Geometric Attention Bias\nrel_bias[head, Δfile×15+Δrank]\n229 buckets per layer"]
+    SUM --> TOK
+    STA --> TOK
+    SKL --> TOK
+    HST --> TOK
+
+
+    %% =========================================================
+    %% TRANSFORMER
+    %% =========================================================
+
+    subgraph TRANSFORMER["Transformer Encoder — 6 × Pre-LN Blocks"]
+
+        X["Input X<br/>(67 × d_model)"]
+
+        LN1["LayerNorm"]
+
+        subgraph ATTENTION["Multi-Head Self-Attention — 8 Heads"]
+            QKV["Q, K, V Projections"]
+            SCORES["Attention Scores<br/>QKᵀ / √d_head"]
+
+            GAB["Geometric Attention Bias<br/>rel_bias[head, Δfile × 15 + Δrank]<br/>229 buckets / layer"]
+
+            ADD["Add GAB"]
             SOFTMAX["Softmax"]
+            AV["Attention × V"]
+            OPROJ["Output Projection"]
         end
-        LNB["LayerNorm"]
-        MLP4["MLP 256→1024→256 (GELU)"]
+
+        RES1["Residual Add"]
+
+        LN2["LayerNorm"]
+
+        MLP["MLP<br/>256 → 1024 → 256<br/>GELU"]
+
+        RES2["Residual Add"]
+
+        XOUT["Output X<br/>(67 × d_model)"]
+
+        X --> LN1
+        LN1 --> QKV
+        QKV --> SCORES
+        GAB --> ADD
+        SCORES --> ADD
+        ADD --> SOFTMAX
+        SOFTMAX --> AV
+        AV --> OPROJ
+        OPROJ --> RES1
+
+        X --> RES1
+
+        RES1 --> LN2
+        LN2 --> MLP
+        MLP --> RES2
+        RES1 --> RES2
+
+        RES2 --> XOUT
+
     end
+
+    TOK --> X
+
+    XOUT -.->|"repeat ×6"| X
+
+
+    %% =========================================================
+    %% POLICY HEAD
+    %% =========================================================
 
     subgraph POLICY["Bilinear Policy Head"]
-        RESHAPE["Reshape sq tokens → (64, d_model)"]
-        QPROJ["q_proj: (64, d_head) — from-square"]
-        KPROJ["k_proj: (64, d_head) — to-square"]
-        OUTER["Outer product: (64, 64) logits"]
-        GATHER["Gather via MOVE_FT → (4546,)"]
-        PROMO["+ promo_bias[to_sq, piece] for promotions"]
+
+        RESHAPE["Select square tokens<br/>sq_0 ... sq_63<br/>(64 × d_model)"]
+
+        QPROJ["q_proj<br/>(64, d_head)<br/>from-square"]
+
+        KPROJ["k_proj<br/>(64, d_head)<br/>to-square"]
+
+        OUTER["Bilinear / Outer Product<br/>Q × Kᵀ<br/>(64 × 64)"]
+
+        GATHER["Gather via MOVE_FT<br/>→ 4546 legal move logits"]
+
+        PROMO["Promotion Bias<br/>+ promo_bias[to_sq, piece]"]
+
+        LOGITS["Final Move Logits<br/>(4546,)"]
+
+        RESHAPE --> QPROJ
+        RESHAPE --> KPROJ
+
+        QPROJ --> OUTER
+        KPROJ --> OUTER
+
+        OUTER --> GATHER
+        GATHER --> PROMO
+        PROMO --> LOGITS
+
     end
 
-    SUM4 --> ALLtok
-    STA --> ALLOK
-    SKL --> ALLOK
-    HST --> ALLOK
-    ALLOK --> ALLOK
-    SUM4 --> ALLOK
-    ALLOK[" "] --> LNA
-    LNA --> QKV --> GAB --> SOFTMAX --> LNB --> MLP4
-    MLP4 --> RESHAPE
-    RESHAPE --> QPROJ
-    RESHAPE --> KPROJ
-    QPROJ --> OUTER
-    KPROJ --> OUTER
-    OUTER --> GATHER --> PROMO
+    XOUT --> RESHAPE
 ```
 
 ### GAB Detail
